@@ -24,12 +24,26 @@
 #include <SPI.h>
 #include "Wire.h"
 
-
-#include <Wire.h>
 #include <vl53l0x_class.h>      // Click to install library: http://librarymanager/All#stm32duino_vl53l0x
 VL53L0X sensor_vl53l0x(&Wire, WB_IO2); 
 
 
+#ifdef RAK4630
+  #define BOARD "RAK4631 
+  #define  RAK4631_BOARD true  
+#else    
+  #define  RAK4631_BOARD false             
+#endif
+ 
+#define TRIG WB_IO6
+#define ECHO WB_IO4
+#define PD   WB_IO5   //power done control （=1 power done，=0 power on） 
+
+#define TIME_OUT  24125 //max measure distance is 4m,the velocity of sound is 331.6m/s in 0℃,TIME_OUT=4*2/331.6*1000000=24215us
+
+float ratio = 346.6/1000/2;   //velocity of sound =331.6+0.6*25℃(m/s),(Indoor temperature about 25℃)
+
+  //measure high level time
 
 
 // RAK4630 supply two LED
@@ -97,32 +111,24 @@ static float ALS = 0;
 
 void setup()
 {
-  Serial.println("test");
-    LoRaWan_OTaa_Init();
-  pinMode(WB_IO2, OUTPUT);
-  digitalWrite(WB_IO2, HIGH);
-  int status;
 
-  // Initialize serial for output.
+    time_t timeout = millis();
   Serial.begin(115200);
-
-  // Initialize I2C bus.
-  Wire.begin();
-
-  // Configure VL53L0X component.
-  sensor_vl53l0x.begin();
-
-  // Switch off VL53L0X component.
-  sensor_vl53l0x.VL53L0X_Off();
-
-  // Initialize VL53L0X component.
-  status = sensor_vl53l0x.InitSensor(0x52);
-  if(status)
+  while (!Serial)
   {
-    Serial.println("Init sensor_vl53l0x failed...");
+    if ((millis() - timeout) < 5000)
+    {
+      delay(100);
+    }
+    else
+    {
+      break;
+    }
   }
-    
+  
 
+  Sensor_VEML7700_Init();
+  LoRaWan_OTaa_Init();
 }
 
 /**@brief Function for LoRaWan initialize
@@ -221,8 +227,43 @@ void LoRaWan_OTaa_Init(void)
 }
 
 
+/**@brief Function for sensor initialize
+   time:2021/07/15
+*/
 
-uint32_t distance;
+ void Sensor_VEML7700_Init(void)
+{
+{
+  pinMode(WB_IO2, OUTPUT);
+  digitalWrite(WB_IO2, HIGH);
+  int status;
+
+
+  // Initialize I2C bus.
+  Wire.begin();
+
+  // Configure VL53L0X component.
+  sensor_vl53l0x.begin();
+
+  // Switch off VL53L0X component.
+  sensor_vl53l0x.VL53L0X_Off();
+
+  // Initialize VL53L0X component.
+  status = sensor_vl53l0x.InitSensor(0x52);
+  if(status)
+  {
+    Serial.println("Init sensor_vl53l0x failed...");
+  }
+ }
+ }
+
+/**@brief Function for sensor gain and IntegrationTime print
+   time:2021/07/15
+*/
+
+
+ uint32_t distance;
+   
 void loop() {
   // Read Range.
   int status;
@@ -234,11 +275,12 @@ void loop() {
     char report[64];
     snprintf(report, sizeof(report), "| Distance [mm]: %ld |", distance);
     Serial.println(report);
-
-
   }
   delay(300);
 }
+
+int respondTime;
+
 
 /**@brief LoRa function for handling HasJoined event.
 */
@@ -285,7 +327,6 @@ void lorawan_confirm_class_handler(DeviceClass_t Class)
 String data = "";
 void send_lora_frame(void)
 {
-
   uint8_t loradatacount = 0;
   if (lmh_join_status_get() != LMH_SET)
   {
@@ -294,8 +335,7 @@ void send_lora_frame(void)
     return;
   }
 
-    
-  data = "Object distance = " + String(distance) + " " + " distance";
+  
   Serial.println(data);
   data = "";  
   memset(m_lora_app_data.buffer, 0, LORAWAN_APP_DATA_BUFF_SIZE);
